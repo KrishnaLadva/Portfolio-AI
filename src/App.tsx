@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_PROFILE, PORTFOLIO_PROJECTS } from './data/portfolioData';
+import { BLOG_ARTICLES } from './data/blogData';
 import type { PortfolioProject, ProfileData } from './types/portfolio';
+import {
+  buildBlogArticleHash,
+  findArticleBySlug,
+  parseBlogSlugFromHash,
+} from './utils/blogLogic';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
 import CanvaCarouselSection from './components/CanvaCarouselSection';
@@ -10,6 +16,8 @@ import ProjectDetailModal from './components/ProjectDetailModal';
 import AboutSection from './components/AboutSection';
 import SkillsSection from './components/SkillsSection';
 import AICreativeLab from './components/AICreativeLab';
+import BlogSection from './components/BlogSection';
+import BlogArticleView from './components/BlogArticleView';
 import ResumeSection from './components/ResumeSection';
 import ContactSection from './components/ContactSection';
 import AIAssistantDrawer from './components/AIAssistantDrawer';
@@ -36,6 +44,13 @@ export default function App() {
 
   const [selectedProject, setSelectedProject] = useState<PortfolioProject | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [activeArticleSlug, setActiveArticleSlug] = useState<string | null>(() => {
+    const slug = parseBlogSlugFromHash(window.location.hash);
+    return findArticleBySlug(BLOG_ARTICLES, slug) ? slug : null;
+  });
+  const pendingScrollIdRef = useRef<string | null>(null);
+
+  const activeArticle = findArticleBySlug(BLOG_ARTICLES, activeArticleSlug);
 
   useEffect(() => {
     try {
@@ -44,6 +59,68 @@ export default function App() {
       // Ignore storage quota issues
     }
   }, [profile]);
+
+  useEffect(() => {
+    function handleHashChange() {
+      const hash = window.location.hash;
+      const slug = parseBlogSlugFromHash(hash);
+      const matched = findArticleBySlug(BLOG_ARTICLES, slug);
+      if (matched) {
+        setActiveArticleSlug(matched.slug);
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      } else {
+        const targetId = hash.replace(/^#/, '');
+        if (targetId) {
+          pendingScrollIdRef.current = targetId;
+        }
+        setActiveArticleSlug(null);
+      }
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (!activeArticle && pendingScrollIdRef.current) {
+      const targetId = pendingScrollIdRef.current;
+      pendingScrollIdRef.current = null;
+      window.requestAnimationFrame(() => {
+        if (targetId === 'top') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    }
+  }, [activeArticle]);
+
+  function handleOpenArticle(slug: string) {
+    const targetHash = buildBlogArticleHash(slug);
+    setActiveArticleSlug(slug);
+    if (window.location.hash !== targetHash) {
+      window.location.hash = targetHash;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function handleNavigateSection(href: string) {
+    const targetId = href.replace(/^#/, '');
+    if (activeArticle) {
+      pendingScrollIdRef.current = targetId;
+      setActiveArticleSlug(null);
+      window.location.hash = href;
+      return;
+    }
+    if (window.location.hash !== href) {
+      window.location.hash = href;
+    }
+    if (targetId === 'top') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
 
   function handleResetProfile() {
     setProfile(DEFAULT_PROFILE);
@@ -56,44 +133,62 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#18181B]">
-      <Navbar brandName={profile.name} />
+      <Navbar
+        brandName={profile.name}
+        isArticleView={Boolean(activeArticle)}
+        onNavigateSection={handleNavigateSection}
+      />
 
       <main>
-        <HeroSection
-          profile={profile}
-          onOpenAssistant={() => setAssistantOpen(true)}
-        />
+        {activeArticle ? (
+          <BlogArticleView
+            article={activeArticle}
+            onBackToBlog={() => handleNavigateSection('#blog')}
+          />
+        ) : (
+          <>
+            <HeroSection
+              profile={profile}
+              onOpenAssistant={() => setAssistantOpen(true)}
+            />
 
-        <CanvaCarouselSection
-          profile={profile}
-          projects={PORTFOLIO_PROJECTS}
-          onSelectProject={(project) => setSelectedProject(project)}
-        />
+            <CanvaCarouselSection
+              profile={profile}
+              projects={PORTFOLIO_PROJECTS}
+              onSelectProject={(project) => setSelectedProject(project)}
+            />
 
-        <PortfolioBoard
-          projects={PORTFOLIO_PROJECTS}
-          onSelectProject={(project) => setSelectedProject(project)}
-        />
+            <PortfolioBoard
+              projects={PORTFOLIO_PROJECTS}
+              onSelectProject={(project) => setSelectedProject(project)}
+            />
 
-        <MoodboardStrip />
+            <MoodboardStrip />
 
-        <AboutSection
-          profile={profile}
-          onUpdateProfile={setProfile}
-          onResetProfile={handleResetProfile}
-        />
+            <AboutSection
+              profile={profile}
+              onUpdateProfile={setProfile}
+              onResetProfile={handleResetProfile}
+            />
 
-        <SkillsSection profile={profile} />
+            <SkillsSection profile={profile} />
 
-        <AICreativeLab
-          profile={profile}
-          projects={PORTFOLIO_PROJECTS}
-          onSelectProject={(project) => setSelectedProject(project)}
-        />
+            <AICreativeLab
+              profile={profile}
+              projects={PORTFOLIO_PROJECTS}
+              onSelectProject={(project) => setSelectedProject(project)}
+            />
 
-        <ResumeSection profile={profile} />
+            <BlogSection
+              articles={BLOG_ARTICLES}
+              onOpenArticle={handleOpenArticle}
+            />
 
-        <ContactSection profile={profile} />
+            <ResumeSection profile={profile} />
+
+            <ContactSection profile={profile} />
+          </>
+        )}
       </main>
 
       <footer className="border-t border-[#E6E1D8] bg-[#FAF8F5] py-8">
@@ -101,11 +196,35 @@ export default function App() {
           <p>
             © {new Date().getFullYear()} {profile.name} · {profile.location}
           </p>
-          <div className="flex items-center gap-5">
-            <a href="#portfolio" className="hover:text-[#18181B]">
+          <div className="flex flex-wrap items-center gap-5">
+            <a
+              href="#portfolio"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNavigateSection('#portfolio');
+              }}
+              className="hover:text-[#18181B]"
+            >
               Portfolio
             </a>
-            <a href="#resume" className="hover:text-[#18181B]">
+            <a
+              href="#blog"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNavigateSection('#blog');
+              }}
+              className="hover:text-[#18181B]"
+            >
+              Blog
+            </a>
+            <a
+              href="#resume"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNavigateSection('#resume');
+              }}
+              className="hover:text-[#18181B]"
+            >
               Resume
             </a>
             <a href={`mailto:${profile.email}`} className="hover:text-[#18181B]">

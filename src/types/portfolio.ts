@@ -74,6 +74,7 @@ export interface PortfolioProject {
   creativeConcept: string;
   process: string[];
   views?: ProjectViewItem[];
+  viewGroups?: unknown[];
   toolsUsed: string[];
   contribution: string[];
   deliverables: string[];
